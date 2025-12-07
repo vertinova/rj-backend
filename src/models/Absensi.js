@@ -3,12 +3,12 @@ const db = require('../config/database');
 class Absensi {
   // Create absensi
   static async create(data) {
-    const { user_id, username, kampus, status_absensi, tanggal_absensi, waktu_absensi, foto_absensi, keterangan } = data;
+    const { user_id, username, kampus, status_absensi, tipe_absensi, tanggal_absensi, waktu_absensi, foto_absensi, keterangan } = data;
     
     const [result] = await db.execute(
-      `INSERT INTO absensi (user_id, username, kampus, status_absensi, tanggal_absensi, waktu_absensi, foto_absensi, keterangan, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [user_id, username || null, kampus || null, status_absensi || 'hadir', tanggal_absensi, waktu_absensi || null, foto_absensi || null, keterangan || null]
+      `INSERT INTO absensi (user_id, username, kampus, status_absensi, tipe_absensi, tanggal_absensi, waktu_absensi, foto_absensi, keterangan, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [user_id, username || null, kampus || null, status_absensi || 'hadir', tipe_absensi || 'datang', tanggal_absensi, waktu_absensi || null, foto_absensi || null, keterangan || null]
     );
     return result.insertId;
   }
@@ -70,12 +70,26 @@ class Absensi {
   }
 
   // Check if already present today
-  static async checkTodayPresence(user_id, date) {
+  static async checkTodayPresence(user_id, date, tipe_absensi = null) {
+    let query = 'SELECT id, tipe_absensi FROM absensi WHERE user_id = ? AND DATE(tanggal_absensi) = DATE(?)';
+    const params = [user_id, date];
+    
+    if (tipe_absensi) {
+      query += ' AND tipe_absensi = ?';
+      params.push(tipe_absensi);
+    }
+    
+    const [rows] = await db.execute(query, params);
+    return rows.length > 0;
+  }
+
+  // Get today's absensi records
+  static async getTodayAbsensi(user_id, date) {
     const [rows] = await db.execute(
-      'SELECT id FROM absensi WHERE user_id = ? AND DATE(tanggal_absensi) = DATE(?)',
+      'SELECT * FROM absensi WHERE user_id = ? AND DATE(tanggal_absensi) = DATE(?) ORDER BY waktu_absensi ASC',
       [user_id, date]
     );
-    return rows.length > 0;
+    return rows;
   }
 }
 

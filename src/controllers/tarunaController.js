@@ -157,7 +157,15 @@ class TarunaController {
   static async submitAbsensi(req, res) {
     try {
       const userId = req.user.id;
-      const { tanggal_absensi, status_absensi, kampus, keterangan } = req.body;
+      const { tanggal_absensi, status_absensi, tipe_absensi, kampus, keterangan } = req.body;
+
+      // Validate tipe_absensi
+      if (!tipe_absensi || !['datang', 'pulang'].includes(tipe_absensi)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Tipe absensi tidak valid (datang/pulang)'
+        });
+      }
 
       // CHECK PROFILE COMPLETENESS FIRST
       const pendaftaran = await Taruna.findByUserId(userId);
@@ -199,13 +207,25 @@ class TarunaController {
         });
       }
 
-      // Check if already present today
-      const alreadyPresent = await Absensi.checkTodayPresence(userId, tanggal_absensi);
+      // Check if already present today for specific type
+      const alreadyPresent = await Absensi.checkTodayPresence(userId, tanggal_absensi, tipe_absensi);
       if (alreadyPresent) {
+        const tipeLabel = tipe_absensi === 'datang' ? 'Absen Latihan' : 'Absen Pulang';
         return res.status(400).json({
           success: false,
-          message: 'Anda sudah melakukan absensi hari ini'
+          message: `Anda sudah melakukan ${tipeLabel} hari ini`
         });
+      }
+
+      // If doing absen pulang, check if already did absen datang
+      if (tipe_absensi === 'pulang') {
+        const hasAbsenDatang = await Absensi.checkTodayPresence(userId, tanggal_absensi, 'datang');
+        if (!hasAbsenDatang) {
+          return res.status(400).json({
+            success: false,
+            message: 'Anda harus melakukan Absen Latihan terlebih dahulu sebelum Absen Pulang'
+          });
+        }
       }
 
       // Validation based on status
@@ -239,6 +259,7 @@ class TarunaController {
         username: req.user.username,
         kampus: kampus || null,
         status_absensi: status_absensi || 'hadir',
+        tipe_absensi: tipe_absensi || 'datang',
         tanggal_absensi,
         waktu_absensi,
         foto_absensi: req.file ? req.file.filename : null,
@@ -247,12 +268,13 @@ class TarunaController {
 
       const absensiId = await Absensi.create(data);
 
-      logger.info(`Absensi submitted by user ID: ${userId} on ${tanggal_absensi} with status: ${status_absensi}`);
+      const tipeLabel = tipe_absensi === 'datang' ? 'Absen Latihan' : 'Absen Pulang';
+      logger.info(`Absensi submitted by user ID: ${userId} on ${tanggal_absensi} with status: ${status_absensi}, type: ${tipe_absensi}`);
 
       res.status(201).json({
         success: true,
-        message: 'Absensi berhasil',
-        data: { absensiId }
+        message: `${tipeLabel} berhasil dicatat`,
+        data: { absensiId, tipe_absensi }
       });
     } catch (error) {
       logger.error(`Submit absensi error: ${error.message}`);
