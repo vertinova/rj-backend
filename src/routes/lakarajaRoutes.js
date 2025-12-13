@@ -20,6 +20,9 @@ const isPanitiaLakaraja = (req, res, next) => {
 // Public routes
 router.post('/register', validateLakarajaRegistration, LakarajaController.register);
 router.post('/login', LakarajaController.login);
+router.get('/kuota', LakarajaController.getKuotaInfo);
+router.get('/kuota/check', LakarajaController.checkKuotaAvailability);
+router.get('/participants', LakarajaController.getApprovedParticipants); // Public endpoint for landing page
 
 // Protected routes - Peserta Lakaraja
 router.get('/profile', authMiddleware, LakarajaController.getProfile);
@@ -46,10 +49,22 @@ router.put('/pendaftaran',
   LakarajaController.updateRegistration
 );
 
+// Team data submission (daftar ulang)
+router.post('/pendaftaran/team',
+  authMiddleware,
+  uploadLakaraja.fields([
+    { name: 'surat_keterangan', maxCount: 1 },
+    { name: 'foto_team', maxCount: 1 },
+    { name: 'foto_anggota', maxCount: 30 } // max 30 members
+  ]),
+  LakarajaController.submitTeamData
+);
+
 // Panitia routes
 router.get('/panitia/users', authMiddleware, isPanitiaLakaraja, LakarajaController.getAllUsers);
 router.get('/panitia/registrations', authMiddleware, isPanitiaLakaraja, LakarajaController.getAllRegistrations);
 router.put('/panitia/registration/:id/status', authMiddleware, isPanitiaLakaraja, LakarajaController.updateRegistrationStatus);
+router.delete('/panitia/:id', authMiddleware, isPanitiaLakaraja, LakarajaController.deleteRegistration);
 router.put('/panitia/user/:id/reset-password', authMiddleware, isPanitiaLakaraja, LakarajaController.resetUserPassword);
 router.put('/panitia/user/:id/toggle-active', authMiddleware, isPanitiaLakaraja, LakarajaController.toggleUserActive);
 router.delete('/panitia/user/:id', authMiddleware, isPanitiaLakaraja, LakarajaController.deleteUser);
@@ -59,6 +74,7 @@ router.get('/panitia/statistics', authMiddleware, isPanitiaLakaraja, LakarajaCon
 router.get('/admin/users', authMiddleware, isAdmin, LakarajaController.getAllUsers);
 router.get('/admin/registrations', authMiddleware, isAdmin, LakarajaController.getAllRegistrations);
 router.put('/admin/registration/:id/status', authMiddleware, isAdmin, LakarajaController.updateRegistrationStatus);
+router.delete('/admin/:id', authMiddleware, isAdmin, LakarajaController.deleteRegistration);
 router.put('/admin/user/:id/reset-password', authMiddleware, isAdmin, LakarajaController.resetUserPassword);
 router.put('/admin/user/:id/toggle-active', authMiddleware, isAdmin, LakarajaController.toggleUserActive);
 router.delete('/admin/user/:id', authMiddleware, isAdmin, LakarajaController.deleteUser);

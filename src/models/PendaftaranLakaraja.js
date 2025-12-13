@@ -30,6 +30,35 @@ class PendaftaranLakaraja {
     return result.insertId;
   }
 
+  // Create new registration with auto-approve (siapa cepat dia dapat)
+  static async createAutoApproved(data) {
+    const {
+      user_id,
+      nama_sekolah,
+      nama_satuan,
+      kategori,
+      logo_satuan,
+      bukti_payment
+    } = data;
+
+    const query = `
+      INSERT INTO pendaftaran_lakaraja 
+      (user_id, nama_sekolah, nama_satuan, kategori, logo_satuan, bukti_payment, status_pendaftaran)
+      VALUES (?, ?, ?, ?, ?, ?, 'approved')
+    `;
+
+    const [result] = await pool.query(query, [
+      user_id,
+      nama_sekolah,
+      nama_satuan,
+      kategori,
+      logo_satuan || null,
+      bukti_payment || null
+    ]);
+
+    return result.insertId;
+  }
+
   // Find by user ID
   static async findByUserId(userId) {
     const query = `
@@ -149,8 +178,9 @@ class PendaftaranLakaraja {
       pending: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE status_pendaftaran = "pending"',
       approved: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE status_pendaftaran = "approved"',
       rejected: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE status_pendaftaran = "rejected"',
-      tim: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = "tim"',
-      individu: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = "individu"'
+      sd: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = "SD"',
+      smp: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = "SMP"',
+      sma: 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = "SMA"'
     };
 
     const stats = {};
@@ -160,6 +190,101 @@ class PendaftaranLakaraja {
     }
 
     return stats;
+  }
+
+  // Check kuota by kategori (hanya yang approved)
+  static async checkKuota(kategori) {
+    const KUOTA = {
+      SD: 10,
+      SMP: 25,
+      SMA: 25
+    };
+
+    const query = 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = ? AND status_pendaftaran = "approved"';
+    const [rows] = await pool.query(query, [kategori]);
+    const current = rows[0].count;
+    const max = KUOTA[kategori] || 0;
+
+    return {
+      kategori,
+      current,
+      max,
+      available: max - current,
+      isFull: current >= max
+    };
+  }
+
+  // Check kuota by kategori (semua yang terdaftar, termasuk pending)
+  // Untuk workflow auto-approve: siapa cepat dia dapat
+  static async checkKuotaRegistered(kategori) {
+    const KUOTA = {
+      SD: 10,
+      SMP: 25,
+      SMA: 25
+    };
+
+    const query = 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = ?';
+    const [rows] = await pool.query(query, [kategori]);
+    const current = rows[0].count;
+    const max = KUOTA[kategori] || 0;
+
+    return {
+      kategori,
+      current,
+      max,
+      available: max - current,
+      isFull: current >= max
+    };
+  }
+
+  // Get all kuota status
+  static async getAllKuotaStatus() {
+    const kategoris = ['SD', 'SMP', 'SMA'];
+    const kuotaStatus = {};
+
+    for (const kategori of kategoris) {
+      kuotaStatus[kategori] = await this.checkKuotaRegistered(kategori);
+    }
+
+    return kuotaStatus;
+  }
+
+  // Update team data
+  static async updateTeamData(userId, data) {
+    const {
+      jumlah_pasukan,
+      surat_keterangan,
+      foto_team,
+      data_anggota // JSON string
+    } = data;
+
+    const query = `
+      UPDATE pendaftaran_lakaraja 
+      SET jumlah_pasukan = ?, 
+          surat_keterangan = ?, 
+          foto_team = ?, 
+          data_anggota = ?,
+          is_team_complete = 1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `;
+
+    const [result] = await pool.query(query, [
+      jumlah_pasukan,
+      surat_keterangan || null,
+      foto_team || null,
+      data_anggota || null,
+      userId
+    ]);
+
+    return result.affectedRows > 0;
+  }
+
+  // Check if team data is complete
+  static async isTeamComplete(userId) {
+    const query = 'SELECT is_team_complete FROM pendaftaran_lakaraja WHERE user_id = ?';
+    const [rows] = await pool.query(query, [userId]);
+    return rows.length > 0 && rows[0].is_team_complete === 1;
   }
 }
 

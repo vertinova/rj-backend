@@ -11,6 +11,12 @@ logs/
 # Uploads
 uploads/
 
+# Temporary/Backup files
+*.bak
+*.tmp
+*.temp
+sql-migrations/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -26,6 +26,18 @@ class LakarajaController {
         });
       }
 
+      // Check if there's any available quota before allowing registration
+      const kuotaStatus = await PendaftaranLakaraja.getAllKuotaStatus();
+      const hasAvailableSpots = Object.values(kuotaStatus).some(k => !k.isFull && k.available > 0);
+      
+      if (!hasAvailableSpots) {
+        return res.status(400).json({
+          success: false,
+          message: 'Maaf, kuota untuk semua kategori sudah penuh. Pendaftaran ditutup.',
+          quotaFull: true
+        });
+      }
+
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -240,8 +252,25 @@ class LakarajaController {
         });
       }
 
-      // Create registration
-      const regId = await PendaftaranLakaraja.create({
+      // Validate kategori
+      if (!['SD', 'SMP', 'SMA'].includes(kategori)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Kategori tidak valid. Pilih SD, SMP, atau SMA'
+        });
+      }
+
+      // Check kuota - hitung yang sudah terdaftar (bukan yang approved)
+      const kuotaInfo = await PendaftaranLakaraja.checkKuotaRegistered(kategori);
+      if (kuotaInfo.isFull) {
+        return res.status(400).json({
+          success: false,
+          message: `Maaf, kuota untuk kategori ${kategori} sudah penuh (${kuotaInfo.max} peserta). Pendaftaran sudah mencapai batas maksimal.`
+        });
+      }
+
+      // Create registration with auto-approve (siapa cepat dia dapat)
+      const regId = await PendaftaranLakaraja.createAutoApproved({
         user_id: userId,
         nama_sekolah,
         nama_satuan,
@@ -250,12 +279,15 @@ class LakarajaController {
         bukti_payment
       });
 
-      logger.info(`New Lakaraja registration: User ID ${userId}, Reg ID ${regId}`);
+      logger.info(`New Lakaraja registration (auto-approved): User ID ${userId}, Reg ID ${regId}, Kategori ${kategori}`);
+
+      // Fetch the complete registration data to return
+      const registrationData = await PendaftaranLakaraja.findByUserId(userId);
 
       res.status(201).json({
         success: true,
-        message: 'Pendaftaran berhasil! Menunggu verifikasi panitia.',
-        data: { registrationId: regId }
+        message: `Selamat! Pendaftaran Anda berhasil diterima untuk kategori ${kategori}. Anda telah terdaftar sebagai peserta Lakaraja 2026.`,
+        data: registrationData
       });
     } catch (error) {
       logger.error(`Submit Lakaraja registration error: ${error.message}`);
@@ -319,6 +351,108 @@ class LakarajaController {
       res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan saat memperbarui pendaftaran'
+      });
+    }
+  }
+
+  // Submit team data (daftar ulang)
+  static async submitTeamData(req, res) {
+    try {
+      const userId = req.user.id;
+      const { jumlah_pasukan, member_names } = req.body; // member_names is JSON string array
+
+      // Check if user has registration
+      const registration = await PendaftaranLakaraja.findByUserId(userId);
+      if (!registration) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pendaftaran tidak ditemukan. Silakan daftar terlebih dahulu.'
+        });
+      }
+
+      // Check if team data already complete
+      if (await PendaftaranLakaraja.isTeamComplete(userId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Data tim sudah lengkap'
+        });
+      }
+
+      // Validate jumlah pasukan
+      const jumlahPasukan = parseInt(jumlah_pasukan);
+      if (isNaN(jumlahPasukan) || jumlahPasukan < 1 || jumlahPasukan > 30) {
+        return res.status(400).json({
+          success: false,
+          message: 'Jumlah pasukan harus antara 1-30'
+        });
+      }
+
+      // Get uploaded files
+      const surat_keterangan = req.files?.surat_keterangan?.[0]?.filename;
+      const foto_team = req.files?.foto_team?.[0]?.filename;
+      const foto_anggota = req.files?.foto_anggota || []; // array of files
+
+      // Validate member names
+      let memberNamesArray = [];
+      try {
+        memberNamesArray = JSON.parse(member_names);
+        if (!Array.isArray(memberNamesArray) || memberNamesArray.length !== jumlahPasukan) {
+          return res.status(400).json({
+            success: false,
+            message: `Jumlah nama anggota harus sama dengan jumlah pasukan (${jumlahPasukan})`
+          });
+        }
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: 'Format data nama anggota tidak valid'
+        });
+      }
+
+      // Validate foto anggota count
+      if (foto_anggota.length !== jumlahPasukan) {
+        return res.status(400).json({
+          success: false,
+          message: `Jumlah foto anggota harus sama dengan jumlah pasukan (${jumlahPasukan})`
+        });
+      }
+
+      // Build data_anggota array
+      const dataAnggota = memberNamesArray.map((nama, index) => ({
+        nama: nama,
+        foto: foto_anggota[index]?.filename || null
+      }));
+
+      // Update team data
+      const updated = await PendaftaranLakaraja.updateTeamData(userId, {
+        jumlah_pasukan: jumlahPasukan,
+        surat_keterangan,
+        foto_team,
+        data_anggota: JSON.stringify(dataAnggota)
+      });
+
+      if (!updated) {
+        return res.status(500).json({
+          success: false,
+          message: 'Gagal menyimpan data tim'
+        });
+      }
+
+      logger.info(`Team data submitted: User ID ${userId}, Jumlah Pasukan ${jumlahPasukan}`);
+
+      // Fetch updated registration data
+      const updatedRegistration = await PendaftaranLakaraja.findByUserId(userId);
+
+      res.json({
+        success: true,
+        message: 'Data tim berhasil disimpan!',
+        data: updatedRegistration
+      });
+    } catch (error) {
+      logger.error(`Submit team data error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat menyimpan data tim'
       });
     }
   }
@@ -509,20 +643,142 @@ class LakarajaController {
     }
   }
 
+  // Delete registration (panitia only)
+  static async deleteRegistration(req, res) {
+    try {
+      const { id } = req.params;
+      const db = require('../config/database');
+
+      // Check if registration exists
+      const [rows] = await db.query(
+        'SELECT * FROM pendaftaran_lakaraja WHERE id = ?',
+        [id]
+      );
+
+      if (rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pendaftaran tidak ditemukan'
+        });
+      }
+
+      // Delete the registration
+      await db.query('DELETE FROM pendaftaran_lakaraja WHERE id = ?', [id]);
+
+      logger.info(`Lakaraja registration deleted: ID ${id} by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        message: 'Pendaftaran berhasil dihapus'
+      });
+    } catch (error) {
+      logger.error(`Delete Lakaraja registration error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat menghapus pendaftaran'
+      });
+    }
+  }
+
   // Get statistics (panitia only)
   static async getStatistics(req, res) {
     try {
       const stats = await UserLakaraja.getStatistics();
+      const kuota = await PendaftaranLakaraja.getAllKuotaStatus();
 
       res.json({
         success: true,
-        data: stats
+        data: {
+          ...stats,
+          kuota
+        }
       });
     } catch (error) {
       logger.error(`Get Lakaraja statistics error: ${error.message}`);
       res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan saat mengambil statistik'
+      });
+    }
+  }
+
+  // Get kuota info (public)
+  static async getKuotaInfo(req, res) {
+    try {
+      const kuota = await PendaftaranLakaraja.getAllKuotaStatus();
+      
+      logger.info(`Kuota info requested: ${JSON.stringify(kuota)}`);
+
+      res.json({
+        success: true,
+        data: kuota
+      });
+    } catch (error) {
+      logger.error(`Get kuota info error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengambil info kuota'
+      });
+    }
+  }
+
+  // Check if any kuota is available (public)
+  static async checkKuotaAvailability(req, res) {
+    try {
+      const kuota = await PendaftaranLakaraja.getAllKuotaStatus();
+      
+      // Check if at least one category has available spots
+      const hasAvailableSpots = Object.values(kuota).some(k => !k.isFull && k.available > 0);
+      
+      res.json({
+        success: true,
+        data: {
+          hasAvailableSpots,
+          kuota
+        }
+      });
+    } catch (error) {
+      logger.error(`Check kuota availability error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengecek ketersediaan kuota'
+      });
+    }
+  }
+
+  // Get approved participants for public landing page (no auth required)
+  static async getApprovedParticipants(req, res) {
+    try {
+      const { kategori } = req.query;
+      const filters = { status_pendaftaran: 'approved' };
+      
+      if (kategori) {
+        filters.kategori = kategori;
+      }
+
+      const participants = await PendaftaranLakaraja.getAll(filters);
+      
+      // Only return necessary fields for landing page (privacy)
+      const publicData = participants.map(p => ({
+        id: p.id,
+        nama_satuan: p.nama_satuan,
+        nama_sekolah: p.nama_sekolah,
+        kategori: p.kategori,
+        logo_satuan: p.logo_satuan,
+        created_at: p.created_at
+      }));
+
+      logger.info(`Public approved participants requested: ${publicData.length} records`);
+
+      res.json({
+        success: true,
+        data: publicData
+      });
+    } catch (error) {
+      logger.error(`Get approved participants error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengambil data peserta'
       });
     }
   }
