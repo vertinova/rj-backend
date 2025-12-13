@@ -3,7 +3,7 @@ const router = express.Router();
 const { body } = require('express-validator');
 const AuthController = require('../controllers/authController');
 const { authMiddleware } = require('../middleware/authMiddleware');
-const validate = require('../middleware/validateMiddleware');
+const { validate } = require('../middleware/validateMiddleware');
 const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
 
 // Validation rules

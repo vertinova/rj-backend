@@ -3,7 +3,7 @@ const router = express.Router();
 const { body } = require('express-validator');
 const adminController = require('../controllers/adminController');
 const { authMiddleware, isAdmin } = require('../middleware/authMiddleware');
-const validate = require('../middleware/validateMiddleware');
+const { validate } = require('../middleware/validateMiddleware');
 
 // All routes require admin authentication
 router.use(authMiddleware, isAdmin);

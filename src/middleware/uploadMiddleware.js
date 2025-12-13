@@ -81,9 +81,17 @@ const uploadPendaftaran = multer({
   { name: 'surat_keterangan_sehat', maxCount: 1 }
 ]);
 
+// Upload for Lakaraja
+const uploadLakaraja = multer({
+  storage: createStorage('lakaraja'),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per file
+  fileFilter: documentFilter
+});
+
 module.exports = {
   uploadPhoto,
   uploadDocument,
   uploadAbsensi,
-  uploadPendaftaran
+  uploadPendaftaran,
+  uploadLakaraja
 };

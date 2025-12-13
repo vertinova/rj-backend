@@ -4,7 +4,7 @@ const { body } = require('express-validator');
 const TarunaController = require('../controllers/tarunaController');
 const { authMiddleware, isTaruna } = require('../middleware/authMiddleware');
 const { uploadPendaftaran, uploadAbsensi } = require('../middleware/uploadMiddleware');
-const validate = require('../middleware/validateMiddleware');
+const { validate } = require('../middleware/validateMiddleware');
 
 // Validation rules
 const pendaftaranValidation = [

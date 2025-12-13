@@ -12,6 +12,7 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const tarunaRoutes = require('./routes/tarunaRoutes');
+const lakarajaRoutes = require('./routes/lakarajaRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -81,6 +82,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/taruna', tarunaRoutes);
+app.use('/api/lakaraja', lakarajaRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
