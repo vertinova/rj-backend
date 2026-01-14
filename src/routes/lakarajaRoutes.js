@@ -65,6 +65,7 @@ router.get('/panitia/users', authMiddleware, isPanitiaLakaraja, LakarajaControll
 router.get('/panitia/registrations', authMiddleware, isPanitiaLakaraja, LakarajaController.getAllRegistrations);
 router.put('/panitia/registration/:id/status', authMiddleware, isPanitiaLakaraja, LakarajaController.updateRegistrationStatus);
 router.delete('/panitia/:id', authMiddleware, isPanitiaLakaraja, LakarajaController.deleteRegistration);
+router.delete('/panitia/team/:id', authMiddleware, isPanitiaLakaraja, LakarajaController.resetTeamData);
 router.put('/panitia/user/:id/reset-password', authMiddleware, isPanitiaLakaraja, LakarajaController.resetUserPassword);
 router.put('/panitia/user/:id/toggle-active', authMiddleware, isPanitiaLakaraja, LakarajaController.toggleUserActive);
 router.delete('/panitia/user/:id', authMiddleware, isPanitiaLakaraja, LakarajaController.deleteUser);

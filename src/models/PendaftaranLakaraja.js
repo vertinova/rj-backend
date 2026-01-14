@@ -286,6 +286,23 @@ class PendaftaranLakaraja {
     const [rows] = await pool.query(query, [userId]);
     return rows.length > 0 && rows[0].is_team_complete === 1;
   }
+
+  // Reset team data (clear daftar ulang but keep registration)
+  static async resetTeamData(id) {
+    const query = `
+      UPDATE pendaftaran_lakaraja 
+      SET jumlah_pasukan = NULL,
+          surat_keterangan = NULL,
+          foto_team = NULL,
+          data_anggota = NULL,
+          is_team_complete = 0,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `;
+
+    const [result] = await pool.query(query, [id]);
+    return result.affectedRows > 0;
+  }
 }
 
 module.exports = PendaftaranLakaraja;

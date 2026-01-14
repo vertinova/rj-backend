@@ -680,6 +680,43 @@ class LakarajaController {
     }
   }
 
+  // Reset team data only (panitia only) - keep registration intact
+  static async resetTeamData(req, res) {
+    try {
+      const { id } = req.params;
+
+      const registration = await PendaftaranLakaraja.findById(id);
+      if (!registration) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pendaftaran tidak ditemukan'
+        });
+      }
+
+      const updated = await PendaftaranLakaraja.resetTeamData(id);
+
+      if (!updated) {
+        return res.status(500).json({
+          success: false,
+          message: 'Gagal mereset data daftar ulang'
+        });
+      }
+
+      logger.info(`Team data reset for registration ID ${id} by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        message: 'Data daftar ulang berhasil direset'
+      });
+    } catch (error) {
+      logger.error(`Reset team data error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mereset data daftar ulang'
+      });
+    }
+  }
+
   // Get statistics (panitia only)
   static async getStatistics(req, res) {
     try {
