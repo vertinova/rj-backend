@@ -39,12 +39,21 @@ else
     exit 1
 fi
 
-echo -e "${YELLOW}Step 3: Install dependencies dan restart aplikasi di VPS...${NC}"
+echo -e "${YELLOW}Step 3: Install dependencies dan setup aplikasi di VPS...${NC}"
 ssh ${VPS_USER}@${VPS_IP} << 'ENDSSH'
 cd /var/www/rajawali-backend
 
 echo "Installing dependencies..."
 npm install --production
+
+echo "Running database migrations..."
+node src/database/migrate.js
+
+echo "Creating necessary directories..."
+mkdir -p uploads/lakaraja uploads/photos uploads/documents uploads/absensi logs
+
+echo "Setting proper permissions..."
+chmod -R 755 uploads logs
 
 echo "Restarting PM2 application..."
 pm2 restart rajawali-api || pm2 start src/server.js --name rajawali-api
@@ -56,6 +65,9 @@ echo "✅ Backend berhasil di-restart!"
 echo ""
 echo "📊 Status aplikasi:"
 pm2 status rajawali-api
+echo ""
+echo "📝 Recent logs:"
+pm2 logs rajawali-api --lines 20 --nostream
 ENDSSH
 
 if [ $? -eq 0 ]; then

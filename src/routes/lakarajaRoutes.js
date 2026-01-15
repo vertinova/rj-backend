@@ -77,6 +77,11 @@ router.post('/panitia/technical-meeting/attendance', authMiddleware, isPanitiaLa
 router.delete('/panitia/technical-meeting/attendance', authMiddleware, isPanitiaLakaraja, LakarajaController.cancelTechnicalMeetingAttendance);
 router.get('/panitia/technical-meeting/stats', authMiddleware, isPanitiaLakaraja, LakarajaController.getTechnicalMeetingStats);
 
+// Kuota Management (Panitia only)
+router.get('/panitia/kuota', authMiddleware, isPanitiaLakaraja, LakarajaController.getKuotaSettings);
+router.put('/panitia/kuota', authMiddleware, isPanitiaLakaraja, LakarajaController.updateKuota);
+router.post('/panitia/kuota/sync', authMiddleware, isPanitiaLakaraja, LakarajaController.syncKuotaTerisi);
+
 // Admin can also access panitia routes
 router.get('/admin/users', authMiddleware, isAdmin, LakarajaController.getAllUsers);
 router.get('/admin/registrations', authMiddleware, isAdmin, LakarajaController.getAllRegistrations);

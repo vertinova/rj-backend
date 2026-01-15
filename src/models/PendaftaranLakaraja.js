@@ -217,16 +217,17 @@ class PendaftaranLakaraja {
   // Check kuota by kategori (semua yang terdaftar, termasuk pending)
   // Untuk workflow auto-approve: siapa cepat dia dapat
   static async checkKuotaRegistered(kategori) {
-    const KUOTA = {
-      SD: 10,
-      SMP: 25,
-      SMA: 25
-    };
+    // Get quota from database instead of hardcoded values
+    const [kuotaRows] = await pool.query(
+      'SELECT kuota FROM kuota_lakaraja WHERE kategori = ?',
+      [kategori]
+    );
+    
+    const max = kuotaRows.length > 0 ? kuotaRows[0].kuota : 0;
 
     const query = 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = ?';
     const [rows] = await pool.query(query, [kategori]);
     const current = rows[0].count;
-    const max = KUOTA[kategori] || 0;
 
     return {
       kategori,

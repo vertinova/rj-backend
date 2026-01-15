@@ -17,6 +17,9 @@ const lakarajaRoutes = require('./routes/lakarajaRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust proxy - required for rate limiting behind nginx/load balancer
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -54,8 +57,9 @@ app.use(cors({
 // Handle preflight requests
 app.options('*', cors());
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Increase payload limit for base64 images (selfie photos)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // HTTP request logging
 if (process.env.NODE_ENV === 'development') {

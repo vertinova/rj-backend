@@ -1024,6 +1024,164 @@ class LakarajaController {
       });
     }
   }
+
+  // Get kuota settings
+  static async getKuotaSettings(req, res) {
+    try {
+      const pool = require('../config/database');
+      
+      const [quotas] = await pool.query(`
+        SELECT 
+          k.kategori,
+          k.kuota,
+          k.terisi,
+          k.updated_at,
+          u.username as updated_by_username
+        FROM kuota_lakaraja k
+        LEFT JOIN users_lakaraja u ON k.updated_by = u.id
+        ORDER BY 
+          CASE k.kategori 
+            WHEN 'SD' THEN 1
+            WHEN 'SMP' THEN 2
+            WHEN 'SMA' THEN 3
+          END
+      `);
+
+      logger.info(`Kuota settings retrieved by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        data: quotas
+      });
+    } catch (error) {
+      logger.error(`Get kuota settings error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengambil data kuota'
+      });
+    }
+  }
+
+  // Update kuota for a specific category
+  static async updateKuota(req, res) {
+    try {
+      const pool = require('../config/database');
+      const { kategori, kuota } = req.body;
+
+      // Validasi input
+      if (!kategori || kuota === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: 'Kategori dan kuota wajib diisi'
+        });
+      }
+
+      if (!['SD', 'SMP', 'SMA'].includes(kategori)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Kategori tidak valid'
+        });
+      }
+
+      if (kuota < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Kuota tidak boleh negatif'
+        });
+      }
+
+      // Get current terisi count
+      const [current] = await pool.query(
+        'SELECT terisi FROM kuota_lakaraja WHERE kategori = ?',
+        [kategori]
+      );
+
+      if (current.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Kategori tidak ditemukan'
+        });
+      }
+
+      const terisi = current[0].terisi;
+
+      if (kuota < terisi) {
+        return res.status(400).json({
+          success: false,
+          message: `Kuota tidak boleh kurang dari jumlah peserta yang sudah terdaftar (${terisi})`
+        });
+      }
+
+      // Update kuota
+      await pool.query(
+        'UPDATE kuota_lakaraja SET kuota = ?, updated_by = ? WHERE kategori = ?',
+        [kuota, req.user.id, kategori]
+      );
+
+      logger.info(`Kuota for ${kategori} updated to ${kuota} by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        message: `Kuota ${kategori} berhasil diperbarui`
+      });
+    } catch (error) {
+      logger.error(`Update kuota error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat memperbarui kuota'
+      });
+    }
+  }
+
+  // Sync terisi count (untuk maintenance)
+  static async syncKuotaTerisi(req, res) {
+    try {
+      const pool = require('../config/database');
+
+      // Count approved registrations per category
+      const [counts] = await pool.query(`
+        SELECT 
+          kategori,
+          COUNT(*) as total
+        FROM pendaftaran_lakaraja
+        WHERE status_pendaftaran = 'approved'
+        GROUP BY kategori
+      `);
+
+      // Update terisi for each category
+      for (const row of counts) {
+        await pool.query(
+          'UPDATE kuota_lakaraja SET terisi = ? WHERE kategori = ?',
+          [row.total, row.kategori]
+        );
+      }
+
+      // Reset terisi to 0 for categories with no approved registrations
+      await pool.query(`
+        UPDATE kuota_lakaraja k
+        LEFT JOIN (
+          SELECT kategori, COUNT(*) as total
+          FROM pendaftaran_lakaraja
+          WHERE status_pendaftaran = 'approved'
+          GROUP BY kategori
+        ) c ON k.kategori = c.kategori
+        SET k.terisi = COALESCE(c.total, 0)
+      `);
+
+      logger.info(`Kuota terisi synced by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        message: 'Sinkronisasi kuota berhasil'
+      });
+    } catch (error) {
+      logger.error(`Sync kuota terisi error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat sinkronisasi kuota'
+      });
+    }
+  }
 }
 
 module.exports = LakarajaController;
