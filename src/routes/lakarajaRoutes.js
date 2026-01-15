@@ -71,6 +71,12 @@ router.put('/panitia/user/:id/toggle-active', authMiddleware, isPanitiaLakaraja,
 router.delete('/panitia/user/:id', authMiddleware, isPanitiaLakaraja, LakarajaController.deleteUser);
 router.get('/panitia/statistics', authMiddleware, isPanitiaLakaraja, LakarajaController.getStatistics);
 
+// Technical Meeting routes (Panitia only)
+router.get('/panitia/technical-meeting/participants', authMiddleware, isPanitiaLakaraja, LakarajaController.getTechnicalMeetingParticipants);
+router.post('/panitia/technical-meeting/attendance', authMiddleware, isPanitiaLakaraja, LakarajaController.markTechnicalMeetingAttendance);
+router.delete('/panitia/technical-meeting/attendance', authMiddleware, isPanitiaLakaraja, LakarajaController.cancelTechnicalMeetingAttendance);
+router.get('/panitia/technical-meeting/stats', authMiddleware, isPanitiaLakaraja, LakarajaController.getTechnicalMeetingStats);
+
 // Admin can also access panitia routes
 router.get('/admin/users', authMiddleware, isAdmin, LakarajaController.getAllUsers);
 router.get('/admin/registrations', authMiddleware, isAdmin, LakarajaController.getAllRegistrations);

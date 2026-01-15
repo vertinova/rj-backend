@@ -819,6 +819,211 @@ class LakarajaController {
       });
     }
   }
+
+  // TECHNICAL MEETING ATTENDANCE FUNCTIONS
+
+  // Get all approved participants for technical meeting (panitia only)
+  static async getTechnicalMeetingParticipants(req, res) {
+    try {
+      const pool = require('../config/database');
+      
+      const query = `
+        SELECT 
+          p.id,
+          p.nama_sekolah,
+          p.nama_satuan,
+          p.kategori,
+          p.logo_satuan,
+          u.username,
+          u.no_telepon,
+          CASE 
+            WHEN a.id IS NOT NULL THEN 1
+            ELSE 0
+          END as sudah_absen,
+          a.waktu_absen,
+          a.foto_selfie,
+          a.catatan as catatan_absen,
+          panitia.username as panitia_nama
+        FROM pendaftaran_lakaraja p
+        INNER JOIN users_lakaraja u ON p.user_id = u.id
+        LEFT JOIN absensi_technical_meeting a ON p.id = a.pendaftaran_id
+        LEFT JOIN users_lakaraja panitia ON a.panitia_id = panitia.id
+        WHERE p.status_pendaftaran = 'approved'
+        ORDER BY p.kategori, p.nama_satuan
+      `;
+      
+      const [participants] = await pool.query(query);
+
+      // Add full path to logo_satuan and convert sudah_absen to boolean
+      const participantsWithFullPath = participants.map(p => ({
+        ...p,
+        logo_satuan: p.logo_satuan ? `/uploads/lakaraja/${p.logo_satuan}` : null,
+        sudah_absen: Boolean(p.sudah_absen)
+      }));
+
+      logger.info(`Technical meeting participants list requested by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        data: participantsWithFullPath
+      });
+    } catch (error) {
+      logger.error(`Get technical meeting participants error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengambil data peserta technical meeting'
+      });
+    }
+  }
+
+  // Mark attendance for technical meeting (panitia only)
+  static async markTechnicalMeetingAttendance(req, res) {
+    try {
+      const { pendaftaran_id, catatan, foto_selfie } = req.body;
+      const panitia_id = req.user.id;
+      const pool = require('../config/database');
+
+      // Validasi input
+      if (!pendaftaran_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID pendaftaran wajib diisi'
+        });
+      }
+
+      if (!foto_selfie) {
+        return res.status(400).json({
+          success: false,
+          message: 'Foto selfie wajib diisi'
+        });
+      }
+
+      // Check if pendaftaran exists and is approved
+      const [pendaftaran] = await pool.query(
+        'SELECT * FROM pendaftaran_lakaraja WHERE id = ? AND status_pendaftaran = ?',
+        [pendaftaran_id, 'approved']
+      );
+
+      if (pendaftaran.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Pendaftaran tidak ditemukan atau belum disetujui'
+        });
+      }
+
+      // Check if already attended
+      const [existing] = await pool.query(
+        'SELECT * FROM absensi_technical_meeting WHERE pendaftaran_id = ?',
+        [pendaftaran_id]
+      );
+
+      if (existing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Peserta sudah melakukan absensi technical meeting'
+        });
+      }
+
+      // Insert attendance with foto_selfie
+      const insertQuery = `
+        INSERT INTO absensi_technical_meeting 
+        (pendaftaran_id, panitia_id, foto_selfie, catatan) 
+        VALUES (?, ?, ?, ?)
+      `;
+      
+      await pool.query(insertQuery, [pendaftaran_id, panitia_id, foto_selfie, catatan || null]);
+
+      logger.info(`Technical meeting attendance marked for pendaftaran ${pendaftaran_id} by panitia ${panitia_id}`);
+
+      res.json({
+        success: true,
+        message: 'Absensi technical meeting berhasil dicatat'
+      });
+    } catch (error) {
+      logger.error(`Mark technical meeting attendance error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mencatat absensi'
+      });
+    }
+  }
+
+  // Cancel attendance for technical meeting (panitia only)
+  static async cancelTechnicalMeetingAttendance(req, res) {
+    try {
+      const { pendaftaran_id } = req.body;
+      const pool = require('../config/database');
+
+      // Validasi input
+      if (!pendaftaran_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID pendaftaran wajib diisi'
+        });
+      }
+
+      // Delete attendance
+      const [result] = await pool.query(
+        'DELETE FROM absensi_technical_meeting WHERE pendaftaran_id = ?',
+        [pendaftaran_id]
+      );
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Absensi tidak ditemukan'
+        });
+      }
+
+      logger.info(`Technical meeting attendance cancelled for pendaftaran ${pendaftaran_id} by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        message: 'Absensi technical meeting berhasil dibatalkan'
+      });
+    } catch (error) {
+      logger.error(`Cancel technical meeting attendance error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat membatalkan absensi'
+      });
+    }
+  }
+
+  // Get technical meeting statistics (panitia only)
+  static async getTechnicalMeetingStats(req, res) {
+    try {
+      const pool = require('../config/database');
+      
+      const statsQuery = `
+        SELECT 
+          COUNT(DISTINCT p.id) as total_peserta,
+          COUNT(DISTINCT a.id) as total_hadir,
+          COUNT(DISTINCT CASE WHEN p.kategori = 'SD' THEN p.id END) as total_sd,
+          COUNT(DISTINCT CASE WHEN p.kategori = 'SMP' THEN p.id END) as total_smp,
+          COUNT(DISTINCT CASE WHEN p.kategori = 'SMA' THEN p.id END) as total_sma,
+          COUNT(DISTINCT CASE WHEN p.kategori = 'SD' AND a.id IS NOT NULL THEN p.id END) as hadir_sd,
+          COUNT(DISTINCT CASE WHEN p.kategori = 'SMP' AND a.id IS NOT NULL THEN p.id END) as hadir_smp,
+          COUNT(DISTINCT CASE WHEN p.kategori = 'SMA' AND a.id IS NOT NULL THEN p.id END) as hadir_sma
+        FROM pendaftaran_lakaraja p
+        LEFT JOIN absensi_technical_meeting a ON p.id = a.pendaftaran_id
+        WHERE p.status_pendaftaran = 'approved'
+      `;
+      
+      const [stats] = await pool.query(statsQuery);
+
+      res.json({
+        success: true,
+        data: stats[0]
+      });
+    } catch (error) {
+      logger.error(`Get technical meeting stats error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengambil statistik technical meeting'
+      });
+    }
+  }
 }
 
 module.exports = LakarajaController;
