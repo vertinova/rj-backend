@@ -82,6 +82,10 @@ router.get('/panitia/kuota', authMiddleware, isPanitiaLakaraja, LakarajaControll
 router.put('/panitia/kuota', authMiddleware, isPanitiaLakaraja, LakarajaController.updateKuota);
 router.post('/panitia/kuota/sync', authMiddleware, isPanitiaLakaraja, LakarajaController.syncKuotaTerisi);
 
+// Waiting List Management (Panitia only)
+router.get('/panitia/waiting-list/:kategori', authMiddleware, isPanitiaLakaraja, LakarajaController.getWaitingList);
+router.post('/panitia/waiting-list/:kategori/promote', authMiddleware, isPanitiaLakaraja, LakarajaController.promoteWaitingList);
+
 // Admin can also access panitia routes
 router.get('/admin/users', authMiddleware, isAdmin, LakarajaController.getAllUsers);
 router.get('/admin/registrations', authMiddleware, isAdmin, LakarajaController.getAllRegistrations);

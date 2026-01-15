@@ -225,16 +225,23 @@ class PendaftaranLakaraja {
     
     const max = kuotaRows.length > 0 ? kuotaRows[0].kuota : 0;
 
-    const query = 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = ?';
+    // Count only approved quota (not waiting list)
+    const query = 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = ? AND status_kuota = "approved"';
     const [rows] = await pool.query(query, [kategori]);
     const current = rows[0].count;
+
+    // Count waiting list
+    const waitlistQuery = 'SELECT COUNT(*) as count FROM pendaftaran_lakaraja WHERE kategori = ? AND status_kuota = "waiting_list"';
+    const [waitlistRows] = await pool.query(waitlistQuery, [kategori]);
+    const waitingList = waitlistRows[0].count;
 
     return {
       kategori,
       current,
       max,
       available: max - current,
-      isFull: current >= max
+      isFull: current >= max,
+      waitingList
     };
   }
 
@@ -303,6 +310,125 @@ class PendaftaranLakaraja {
 
     const [result] = await pool.query(query, [id]);
     return result.affectedRows > 0;
+  }
+
+  // WAITING LIST METHODS
+
+  // Create registration with waiting list if quota full
+  static async createWithWaitingList(data) {
+    const {
+      user_id,
+      nama_sekolah,
+      nama_satuan,
+      kategori,
+      logo_satuan,
+      bukti_payment
+    } = data;
+
+    // Check if quota is full
+    const kuotaStatus = await this.checkKuotaRegistered(kategori);
+    const statusKuota = kuotaStatus.isFull ? 'waiting_list' : 'approved';
+    
+    let waitlistPosition = null;
+    if (statusKuota === 'waiting_list') {
+      // Get next position in waiting list
+      const [posRows] = await pool.query(
+        'SELECT MAX(waitlist_position) as max_pos FROM pendaftaran_lakaraja WHERE kategori = ? AND status_kuota = "waiting_list"',
+        [kategori]
+      );
+      waitlistPosition = (posRows[0].max_pos || 0) + 1;
+    }
+
+    const query = `
+      INSERT INTO pendaftaran_lakaraja 
+      (user_id, nama_sekolah, nama_satuan, kategori, logo_satuan, bukti_payment, 
+       status_pendaftaran, status_kuota, waitlist_position)
+      VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+    `;
+
+    const [result] = await pool.query(query, [
+      user_id,
+      nama_sekolah,
+      nama_satuan,
+      kategori,
+      logo_satuan || null,
+      bukti_payment || null,
+      statusKuota,
+      waitlistPosition
+    ]);
+
+    return {
+      insertId: result.insertId,
+      statusKuota,
+      waitlistPosition
+    };
+  }
+
+  // Get waiting list by kategori
+  static async getWaitingList(kategori) {
+    const query = `
+      SELECT 
+        p.*,
+        u.email,
+        u.nama_lengkap,
+        u.no_telepon
+      FROM pendaftaran_lakaraja p
+      JOIN users_lakaraja u ON p.user_id = u.id
+      WHERE p.kategori = ? AND p.status_kuota = 'waiting_list'
+      ORDER BY p.waitlist_position ASC
+    `;
+    const [rows] = await pool.query(query, [kategori]);
+    return rows;
+  }
+
+  // Promote waiting list to approved (when quota increased)
+  static async promoteWaitingList(kategori, count = 1) {
+    // Get waiting list ordered by position
+    const waitlist = await this.getWaitingList(kategori);
+    
+    if (waitlist.length === 0) {
+      return { promoted: 0, promotedIds: [] };
+    }
+
+    const toPromote = waitlist.slice(0, count);
+    const promotedIds = toPromote.map(p => p.id);
+
+    if (promotedIds.length > 0) {
+      const query = `
+        UPDATE pendaftaran_lakaraja 
+        SET status_kuota = 'approved',
+            waitlist_position = NULL,
+            waitlist_promoted_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id IN (?)
+      `;
+      await pool.query(query, [promotedIds]);
+
+      // Reorder remaining waiting list positions
+      const remaining = waitlist.slice(count);
+      for (let i = 0; i < remaining.length; i++) {
+        await pool.query(
+          'UPDATE pendaftaran_lakaraja SET waitlist_position = ? WHERE id = ?',
+          [i + 1, remaining[i].id]
+        );
+      }
+    }
+
+    return {
+      promoted: promotedIds.length,
+      promotedIds
+    };
+  }
+
+  // Get user's waiting list position
+  static async getUserWaitlistPosition(userId) {
+    const query = `
+      SELECT waitlist_position, kategori 
+      FROM pendaftaran_lakaraja 
+      WHERE user_id = ? AND status_kuota = 'waiting_list'
+    `;
+    const [rows] = await pool.query(query, [userId]);
+    return rows[0];
   }
 }
 

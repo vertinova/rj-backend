@@ -260,17 +260,11 @@ class LakarajaController {
         });
       }
 
-      // Check kuota - hitung yang sudah terdaftar (bukan yang approved)
+      // Check kuota - hitung yang sudah approved + waiting list
       const kuotaInfo = await PendaftaranLakaraja.checkKuotaRegistered(kategori);
-      if (kuotaInfo.isFull) {
-        return res.status(400).json({
-          success: false,
-          message: `Maaf, kuota untuk kategori ${kategori} sudah penuh (${kuotaInfo.max} peserta). Pendaftaran sudah mencapai batas maksimal.`
-        });
-      }
-
-      // Create registration with auto-approve (siapa cepat dia dapat)
-      const regId = await PendaftaranLakaraja.createAutoApproved({
+      
+      // Create registration with waiting list support
+      const result = await PendaftaranLakaraja.createWithWaitingList({
         user_id: userId,
         nama_sekolah,
         nama_satuan,
@@ -279,15 +273,21 @@ class LakarajaController {
         bukti_payment
       });
 
-      logger.info(`New Lakaraja registration (auto-approved): User ID ${userId}, Reg ID ${regId}, Kategori ${kategori}`);
+      const statusMessage = result.statusKuota === 'waiting_list' 
+        ? `Kuota kategori ${kategori} sudah penuh. Pendaftaran Anda berhasil masuk ke WAITING LIST posisi #${result.waitlistPosition}. Anda akan dipromosikan otomatis jika ada slot tersedia.`
+        : `Selamat! Pendaftaran Anda berhasil diterima untuk kategori ${kategori}. Anda telah terdaftar sebagai peserta Lakaraja 2026.`;
+
+      logger.info(`New Lakaraja registration: User ID ${userId}, Reg ID ${result.insertId}, Kategori ${kategori}, Status: ${result.statusKuota}${result.waitlistPosition ? ', Waitlist #' + result.waitlistPosition : ''}`);
 
       // Fetch the complete registration data to return
       const registrationData = await PendaftaranLakaraja.findByUserId(userId);
 
       res.status(201).json({
         success: true,
-        message: `Selamat! Pendaftaran Anda berhasil diterima untuk kategori ${kategori}. Anda telah terdaftar sebagai peserta Lakaraja 2026.`,
-        data: registrationData
+        message: statusMessage,
+        data: registrationData,
+        waitingList: result.statusKuota === 'waiting_list',
+        waitlistPosition: result.waitlistPosition
       });
     } catch (error) {
       logger.error(`Submit Lakaraja registration error: ${error.message}`);
@@ -1179,6 +1179,77 @@ class LakarajaController {
       res.status(500).json({
         success: false,
         message: 'Terjadi kesalahan saat sinkronisasi kuota'
+      });
+    }
+  }
+
+  // Get waiting list for a kategori
+  static async getWaitingList(req, res) {
+    try {
+      const { kategori } = req.params;
+
+      if (!['SD', 'SMP', 'SMA'].includes(kategori)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Kategori tidak valid'
+        });
+      }
+
+      const waitlist = await PendaftaranLakaraja.getWaitingList(kategori);
+
+      res.json({
+        success: true,
+        data: waitlist,
+        count: waitlist.length
+      });
+    } catch (error) {
+      logger.error(`Get waiting list error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengambil waiting list'
+      });
+    }
+  }
+
+  // Promote waiting list when kuota increased
+  static async promoteWaitingList(req, res) {
+    try {
+      const { kategori } = req.params;
+      const { count } = req.body; // Number of slots to promote
+
+      if (!['SD', 'SMP', 'SMA'].includes(kategori)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Kategori tidak valid'
+        });
+      }
+
+      const promoteCount = parseInt(count) || 1;
+
+      if (promoteCount < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'Jumlah promosi harus minimal 1'
+        });
+      }
+
+      const result = await PendaftaranLakaraja.promoteWaitingList(kategori, promoteCount);
+
+      logger.info(`Promoted ${result.promoted} from waiting list for ${kategori} by panitia ${req.user.id}`);
+
+      res.json({
+        success: true,
+        message: `Berhasil mempromosikan ${result.promoted} peserta dari waiting list`,
+        data: {
+          promoted: result.promoted,
+          promotedIds: result.promotedIds
+        }
+      });
+    } catch (error) {
+      logger.error(`Promote waiting list error: ${error.message}`);
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mempromosikan waiting list'
       });
     }
   }
